@@ -130,9 +130,8 @@ status_t jit_uni_dw_conv_fwd_kernel_t<isa, kernel_dt>::init_conf(
             blocked_tag = is_3d ? nCdhw4c : nChw4c;
             wei_tag = is_3d ? Goidhw4g : Goihw4g;
             jcp.ur_w = 8;
-            jcp.nb_ch_blocking
-                    = ((!is_3d && src_d.dims()[2] == 1)
-                              && kernel_dt == data_type::f32)
+            jcp.nb_ch_blocking = ((!is_3d && src_d.dims()[2] == 1)
+                                         && kernel_dt == data_type::f32)
                     ? 1
                     : 3; // set blocking = 1 for f32 1d convs
             break;
@@ -228,9 +227,8 @@ status_t jit_uni_dw_conv_fwd_kernel_t<isa, kernel_dt>::init_conf(
     jcp.back_pad = calculate_end_padding(
             jcp.f_pad, jcp.od, jcp.id, jcp.stride_d, ext_kd);
     bool kernel_outside_src = false || ext_kw <= jcp.l_pad
-            || ext_kw <= jcp.r_pad || ext_kh <= jcp.t_pad
-            || ext_kh <= jcp.b_pad || ext_kd <= jcp.f_pad
-            || ext_kd <= jcp.back_pad;
+            || ext_kw <= jcp.r_pad || ext_kh <= jcp.t_pad || ext_kh <= jcp.b_pad
+            || ext_kd <= jcp.f_pad || ext_kd <= jcp.back_pad;
     if (kernel_outside_src) return status::unimplemented;
     if (isa == sve_128 && jcp.iw == 1)
         return status::unimplemented; // fallback to brdgemm since it's faster

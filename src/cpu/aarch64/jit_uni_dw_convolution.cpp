@@ -79,10 +79,10 @@ void jit_uni_dw_convolution_fwd_t<isa, src_type, dst_type>::execute_forward(
     const int kw = 0;
     const int chb_work = utils::div_up(jcp.nb_ch, ch_step);
     // Both 2D NHWC and 3D NDHWC keep channels contiguous.
-    const auto is_src_layout_nxc = utils::one_of(
-            jcp.src_tag, format_tag::nhwc, format_tag::ndhwc);
-    const auto is_dst_layout_nxc = utils::one_of(
-            jcp.dst_tag, format_tag::nhwc, format_tag::ndhwc);
+    const auto is_src_layout_nxc
+            = utils::one_of(jcp.src_tag, format_tag::nhwc, format_tag::ndhwc);
+    const auto is_dst_layout_nxc
+            = utils::one_of(jcp.dst_tag, format_tag::nhwc, format_tag::ndhwc);
 
     // Depth is driver-level parallel work. A single JIT call still owns the
     // complete KD reduction for one output depth/height row.
@@ -95,11 +95,11 @@ void jit_uni_dw_convolution_fwd_t<isa, src_type, dst_type>::execute_forward(
 
         int n {0}, chb {0}, od {0}, oh {0};
         if (jcp.loop_order == loop_ngcw)
-            utils::nd_iterator_init(start, n, jcp.mb, chb, chb_work, od,
-                    jcp.od, oh, jcp.oh);
+            utils::nd_iterator_init(
+                    start, n, jcp.mb, chb, chb_work, od, jcp.od, oh, jcp.oh);
         else if (jcp.loop_order == loop_nhwcg)
-            utils::nd_iterator_init(start, n, jcp.mb, od, jcp.od, oh, jcp.oh,
-                    chb, chb_work);
+            utils::nd_iterator_init(
+                    start, n, jcp.mb, od, jcp.od, oh, jcp.oh, chb, chb_work);
         else
             assert(!"unsupported loop order");
 
@@ -111,16 +111,12 @@ void jit_uni_dw_convolution_fwd_t<isa, src_type, dst_type>::execute_forward(
             // Select the first valid input/filter depth plane. Padding is
             // represented by shortening KD rather than reading padded memory.
             const int id0 = od * jcp.stride_d - jcp.f_pad;
-            const int d_f_overflow
-                    = div_up(nstl::max(0, -id0), dil_d);
-            const int d_b_overflow = div_up(nstl::max(0,
-                                                    id0 - jcp.id
-                                                            + (jcp.kd - 1)
-                                                                    * dil_d
-                                                            + 1),
+            const int d_f_overflow = div_up(nstl::max(0, -id0), dil_d);
+            const int d_b_overflow = div_up(
+                    nstl::max(0, id0 - jcp.id + (jcp.kd - 1) * dil_d + 1),
                     dil_d);
-            const int kd_padding = nstl::max(
-                    0, jcp.kd - d_f_overflow - d_b_overflow);
+            const int kd_padding
+                    = nstl::max(0, jcp.kd - d_f_overflow - d_b_overflow);
             const int id = nstl::max(0, id0 + d_f_overflow * dil_d);
 
             const int i_t_overflow
@@ -143,10 +139,8 @@ void jit_uni_dw_convolution_fwd_t<isa, src_type, dst_type>::execute_forward(
             const auto oc_off_idx = is_dst_layout_nxc ? ch * jcp.ch_block : ch;
 
             auto par_conv = jit_conv_args_t();
-            par_conv.src = jcp.is_fused_conv
-                    ? src
-                    : is_3d ? &src[src_d.blk_off(
-                                      n, ic_off_idx, id, ih, iw)]
+            par_conv.src = jcp.is_fused_conv ? src
+                    : is_3d ? &src[src_d.blk_off(n, ic_off_idx, id, ih, iw)]
                             : &src[src_d.blk_off(n, ic_off_idx, ih, iw)];
             par_conv.dst = is_3d
                     ? &dst[dst_d.blk_off(n, oc_off_idx, od, oh, ow)]
@@ -154,7 +148,7 @@ void jit_uni_dw_convolution_fwd_t<isa, src_type, dst_type>::execute_forward(
 
             par_conv.filt = is_3d
                     ? &weights[weights_d.blk_off(
-                            ch, 0, 0, d_f_overflow, kh, kw)]
+                              ch, 0, 0, d_f_overflow, kh, kw)]
                     : &weights[weights_d.blk_off(ch, 0, 0, kh, kw)];
             if (bias) par_conv.bias = &bias[bias_d.blk_off(ch * jcp.ch_block)];
 
@@ -178,8 +172,8 @@ void jit_uni_dw_convolution_fwd_t<isa, src_type, dst_type>::execute_forward(
 
             if (jcp.loop_order == loop_ngcw) {
                 ++iwork;
-                utils::nd_iterator_step(n, jcp.mb, chb, chb_work, od, jcp.od,
-                        oh, jcp.oh);
+                utils::nd_iterator_step(
+                        n, jcp.mb, chb, chb_work, od, jcp.od, oh, jcp.oh);
             } else if (jcp.loop_order == loop_nhwcg) {
                 utils::nd_iterator_jump(iwork, end, n, jcp.mb, od, jcp.od, oh,
                         jcp.oh, chb, chb_work);

@@ -43,9 +43,8 @@ void jit_uni_dw_conv_fwd_kernel_f32_t<isa>::load_src(
 
     const auto dst_layout_nxc = is_dst_layout_nxc();
     const auto ch_blk = jcp.ch_block;
-    const auto ocb_stride = dst_layout_nxc
-            ? ch_blk
-            : jcp.od * jcp.oh * jcp.ow * ch_blk;
+    const auto ocb_stride
+            = dst_layout_nxc ? ch_blk : jcp.od * jcp.oh * jcp.ow * ch_blk;
     const auto ow_stride = dst_layout_nxc ? jcp.ngroups : ch_blk;
     for (int ch = 0; ch < ur_ch_blocks; ch++) {
         // adjust the src offset so it's always within the range expected by LD_MUL_VL.
@@ -92,9 +91,8 @@ void jit_uni_dw_conv_fwd_kernel_f32_t<asimd>::load_src(
 
     const auto dst_layout_nxc = is_dst_layout_nxc();
     const auto ch_blk = jcp.ch_block;
-    const auto ocb_stride = dst_layout_nxc
-            ? ch_blk
-            : jcp.od * jcp.oh * jcp.ow * ch_blk;
+    const auto ocb_stride
+            = dst_layout_nxc ? ch_blk : jcp.od * jcp.oh * jcp.ow * ch_blk;
     const auto ow_stride = dst_layout_nxc ? jcp.ngroups : ch_blk;
 
     for (int ch = 0; ch < ur_ch_blocks; ch++) {
@@ -177,8 +175,7 @@ void jit_uni_dw_conv_fwd_kernel_f32_t<isa>::apply_filter_unrolled(
             add_imm(reg_tmp_addr, aux_reg_input,
                     (ch * icb_stride) * jcp.typesize_in, reg_tmp_imm);
             add_imm(reg_tmp2_addr, aux_reg_kernel,
-                    (ch * jcp.kd * jcp.kh * jcp.kw * ch_blk)
-                            * jcp.typesize_in,
+                    (ch * jcp.kd * jcp.kh * jcp.kw * ch_blk) * jcp.typesize_in,
                     reg_tmp_imm);
             for (int kw = 0; kw < jcp.kw; kw++) {
                 int ker_off = kw * ch_blk;
@@ -258,8 +255,7 @@ void jit_uni_dw_conv_fwd_kernel_f32_t<isa>::apply_filter_unrolled(
 
     // Move to the same valid KH position in the next dilated input depth
     // plane and the next physical weight depth plane.
-    add_imm(aux_reg_input_depth,
-            aux_reg_input_depth,
+    add_imm(aux_reg_input_depth, aux_reg_input_depth,
             id_stride * dilate_d * jcp.typesize_in, reg_tmp_imm);
     add_imm(aux_reg_kernel_depth, aux_reg_kernel_depth,
             jcp.kh * jcp.kw * ch_blk * jcp.typesize_in, reg_tmp_imm);
@@ -284,9 +280,8 @@ void jit_uni_dw_conv_fwd_kernel_f32_t<isa>::store_dst(
 
     const auto dst_layout_nxc = is_dst_layout_nxc();
     const auto ch_blk = jcp.ch_block;
-    const auto ocb_stride = dst_layout_nxc
-            ? ch_blk
-            : jcp.od * jcp.oh * jcp.ow * ch_blk;
+    const auto ocb_stride
+            = dst_layout_nxc ? ch_blk : jcp.od * jcp.oh * jcp.ow * ch_blk;
     const auto ow_stride = dst_layout_nxc ? jcp.ngroups : ch_blk;
 
     for (int ch = 0; ch < ur_ch_blocks; ch++) {
@@ -319,9 +314,8 @@ void jit_uni_dw_conv_fwd_kernel_f32_t<asimd>::store_dst(
 
     const auto dst_layout_nxc = is_dst_layout_nxc();
     const auto ch_blk = jcp.ch_block;
-    const auto ocb_stride = dst_layout_nxc
-            ? ch_blk
-            : jcp.od * jcp.oh * jcp.ow * ch_blk;
+    const auto ocb_stride
+            = dst_layout_nxc ? ch_blk : jcp.od * jcp.oh * jcp.ow * ch_blk;
     const auto ow_stride = dst_layout_nxc ? jcp.ngroups : ch_blk;
 
     for (int ch = 0; ch < ur_ch_blocks; ch++) {
