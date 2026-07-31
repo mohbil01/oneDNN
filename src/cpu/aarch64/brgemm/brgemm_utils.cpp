@@ -275,7 +275,9 @@ status_t brdgmm_blocking(brgemm_desc_t *brg) {
     nb_n_block1 = div_up(N, n_block1);
     n_block1_tail = N % n_block1;
 
-    const int max_n_block2_vmms = 4;
+    const bool use_sve128_dw_f32_blocking
+            = brg->isa_impl == sve_128 && brg->is_f32 && N >= 184;
+    const int max_n_block2_vmms = use_sve128_dw_f32_blocking ? 16 : 4;
     const int max_n_block2 = max_n_block2_vmms / n_block1_num_steps;
     n_block2 = nstl::min(max_n_block2, nb_n_block1);
     nb_n_block2 = div_up(nb_n_block1, n_block2);

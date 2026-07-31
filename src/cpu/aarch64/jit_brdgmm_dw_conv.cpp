@@ -442,8 +442,10 @@ status_t brdgmm_dw_convolution_fwd_t<isa>::pd_t::init_brdgmm_conf() {
                     jcp.nb_ch_blocking = jcp.ngroups;
                 }
             } else {
-                const int max_ch_block2
-                        = is_superset(jcp.isa, sve_512) ? 4 : bcp_0.ld_block;
+                const int max_ch_block2 = jcp.isa == sve_128
+                        ? nstl::max(4, jcp.nb_ch / 3)
+                        : (is_superset(jcp.isa, sve_512) ? 4
+                                                        : bcp_0.ld_block);
                 jcp.nb_ch_blocking
                         = nstl::min(max_ch_block2 * jcp.ch_block, jcp.ngroups);
             }
