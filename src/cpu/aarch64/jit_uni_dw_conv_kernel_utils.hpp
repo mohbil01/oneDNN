@@ -104,38 +104,42 @@ status_t jit_uni_dw_conv_fwd_kernel_t<isa, kernel_dt>::init_conf(
     const memory_desc_wrapper bias_d(&bias_md);
 
     const int ndims = src_d.ndims();
-    // Currently this kernel only supports 2D convolutions.
-    if (ndims != 4) return status::unimplemented;
+    // Keep the original 2D path and add the 5D descriptor used by 3D
+    // convolution. Other ranks still fall through to another implementation.
+    if (!utils::one_of(ndims, 4, 5)) return status::unimplemented;
+    const bool is_3d = ndims == 5;
+    jcp.ndims = ndims;
 
     format_tag_t blocked_tag;
     format_tag_t wei_tag;
     switch (isa) {
         case sve_512:
-            blocked_tag = nChw16c;
-            wei_tag = Goihw16g;
+            blocked_tag = is_3d ? nCdhw16c : nChw16c;
+            wei_tag = is_3d ? Goidhw16g : Goihw16g;
             jcp.ur_w = 6;
             jcp.nb_ch_blocking = 4;
             break;
         case sve_256:
-            blocked_tag = nChw8c;
-            wei_tag = Goihw8g;
+            blocked_tag = is_3d ? nCdhw8c : nChw8c;
+            wei_tag = is_3d ? Goidhw8g : Goihw8g;
             jcp.ur_w = 4;
             jcp.nb_ch_blocking = 3;
             break;
         case sve_128:
         case asimd:
-            blocked_tag = nChw4c;
-            wei_tag = Goihw4g;
+            blocked_tag = is_3d ? nCdhw4c : nChw4c;
+            wei_tag = is_3d ? Goidhw4g : Goihw4g;
             jcp.ur_w = 8;
             jcp.nb_ch_blocking
-                    = (src_d.dims()[2] == 1 && kernel_dt == data_type::f32)
+                    = ((!is_3d && src_d.dims()[2] == 1)
+                              && kernel_dt == data_type::f32)
                     ? 1
                     : 3; // set blocking = 1 for f32 1d convs
             break;
         default: return status::unimplemented;
     }
 
-    const auto nxc_tag = nhwc;
+    const auto nxc_tag = is_3d ? ndhwc : nhwc;
     jcp.with_bias = cd.bias_desc.format_kind != format_kind::undef;
 
     if (src_d.format_kind() == format_kind::any) {
@@ -186,34 +190,47 @@ status_t jit_uni_dw_conv_fwd_kernel_t<isa, kernel_dt>::init_conf(
     jcp.oc_without_padding = jcp.oc;
     jcp.ic = src_d.dims()[1];
 
-    jcp.ih = src_d.dims()[2];
-    jcp.iw = src_d.dims()[3];
-    jcp.oh = dst_d.dims()[2];
-    jcp.ow = dst_d.dims()[3];
+    // Normalize 2D to depth one. This lets the driver and JIT share the same
+    // depth loop without changing established 2D behavior.
+    jcp.id = is_3d ? src_d.dims()[2] : 1;
+    jcp.ih = src_d.dims()[ndims - 2];
+    jcp.iw = src_d.dims()[ndims - 1];
+    jcp.od = is_3d ? dst_d.dims()[2] : 1;
+    jcp.oh = dst_d.dims()[ndims - 2];
+    jcp.ow = dst_d.dims()[ndims - 1];
 
-    jcp.kh = weights_d.dims()[3];
-    jcp.kw = weights_d.dims()[4];
+    jcp.kd = is_3d ? weights_d.dims()[3] : 1;
+    jcp.kh = weights_d.dims()[ndims - 1];
+    jcp.kw = weights_d.dims()[ndims];
 
-    jcp.t_pad = cd.padding[0][0];
-    jcp.l_pad = cd.padding[0][1];
-    jcp.b_pad = cd.padding[1][0];
-    jcp.r_pad = cd.padding[1][1];
+    jcp.f_pad = is_3d ? cd.padding[0][0] : 0;
+    jcp.t_pad = cd.padding[0][ndims - 4];
+    jcp.l_pad = cd.padding[0][ndims - 3];
+    jcp.back_pad = is_3d ? cd.padding[1][0] : 0;
+    jcp.b_pad = cd.padding[1][ndims - 4];
+    jcp.r_pad = cd.padding[1][ndims - 3];
 
-    jcp.stride_h = cd.strides[0];
-    jcp.stride_w = cd.strides[1];
+    jcp.stride_d = is_3d ? cd.strides[0] : 1;
+    jcp.stride_h = cd.strides[ndims - 4];
+    jcp.stride_w = cd.strides[ndims - 3];
 
-    jcp.dilate_h = cd.dilates[0];
-    jcp.dilate_w = cd.dilates[1];
+    jcp.dilate_d = is_3d ? cd.dilates[0] : 0;
+    jcp.dilate_h = cd.dilates[ndims - 4];
+    jcp.dilate_w = cd.dilates[ndims - 3];
 
     int ext_kw = calculate_extended_filter_size(jcp.kw, jcp.dilate_w);
     int ext_kh = calculate_extended_filter_size(jcp.kh, jcp.dilate_h);
+    int ext_kd = calculate_extended_filter_size(jcp.kd, jcp.dilate_d);
     jcp.r_pad = calculate_end_padding(
             jcp.l_pad, jcp.ow, jcp.iw, jcp.stride_w, ext_kw);
     jcp.b_pad = calculate_end_padding(
             jcp.t_pad, jcp.oh, jcp.ih, jcp.stride_h, ext_kh);
+    jcp.back_pad = calculate_end_padding(
+            jcp.f_pad, jcp.od, jcp.id, jcp.stride_d, ext_kd);
     bool kernel_outside_src = false || ext_kw <= jcp.l_pad
             || ext_kw <= jcp.r_pad || ext_kh <= jcp.t_pad
-            || ext_kh <= jcp.b_pad;
+            || ext_kh <= jcp.b_pad || ext_kd <= jcp.f_pad
+            || ext_kd <= jcp.back_pad;
     if (kernel_outside_src) return status::unimplemented;
     if (isa == sve_128 && jcp.iw == 1)
         return status::unimplemented; // fallback to brdgemm since it's faster
@@ -244,7 +261,7 @@ status_t jit_uni_dw_conv_fwd_kernel_t<isa, kernel_dt>::init_conf(
         constexpr size_t max_ex_off = 0;
 
         // check that input offsets fit into s32
-        const size_t max_ic_off = max_ch_off * jcp.ih * jcp.iw;
+        const size_t max_ic_off = max_ch_off * jcp.id * jcp.ih * jcp.iw;
         const size_t max_iw_idx
                 = static_cast<size_t>(jcp.ur_w - 1) * jcp.stride_w
                 + (ext_kw - 1);
@@ -254,7 +271,7 @@ status_t jit_uni_dw_conv_fwd_kernel_t<isa, kernel_dt>::init_conf(
         if (max_input_offset > INT_MAX) return status::unimplemented;
 
         // check that output offsets fit into s32
-        const size_t max_oc_off = max_ch_off * jcp.oh * jcp.ow;
+        const size_t max_oc_off = max_ch_off * jcp.od * jcp.oh * jcp.ow;
         const size_t max_ow_off
                 = static_cast<size_t>(jcp.ur_w - 1) * jcp.ch_block;
         const size_t max_output_offset

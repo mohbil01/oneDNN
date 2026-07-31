@@ -43,7 +43,9 @@ void jit_uni_dw_conv_fwd_kernel_f32_t<isa>::load_src(
 
     const auto dst_layout_nxc = is_dst_layout_nxc();
     const auto ch_blk = jcp.ch_block;
-    const auto ocb_stride = dst_layout_nxc ? ch_blk : jcp.oh * jcp.ow * ch_blk;
+    const auto ocb_stride = dst_layout_nxc
+            ? ch_blk
+            : jcp.od * jcp.oh * jcp.ow * ch_blk;
     const auto ow_stride = dst_layout_nxc ? jcp.ngroups : ch_blk;
     for (int ch = 0; ch < ur_ch_blocks; ch++) {
         // adjust the src offset so it's always within the range expected by LD_MUL_VL.
@@ -90,7 +92,9 @@ void jit_uni_dw_conv_fwd_kernel_f32_t<asimd>::load_src(
 
     const auto dst_layout_nxc = is_dst_layout_nxc();
     const auto ch_blk = jcp.ch_block;
-    const auto ocb_stride = dst_layout_nxc ? ch_blk : jcp.oh * jcp.ow * ch_blk;
+    const auto ocb_stride = dst_layout_nxc
+            ? ch_blk
+            : jcp.od * jcp.oh * jcp.ow * ch_blk;
     const auto ow_stride = dst_layout_nxc ? jcp.ngroups : ch_blk;
 
     for (int ch = 0; ch < ur_ch_blocks; ch++) {
@@ -131,6 +135,7 @@ void jit_uni_dw_conv_fwd_kernel_f32_t<isa>::apply_filter_unrolled(
         int ur_ch_blocks, int ur_w, int pad_l, int pad_r) {
 
     int ch_blk = jcp.ch_block;
+    int dilate_d = jcp.dilate_d + 1;
     int dilate_h = jcp.dilate_h + 1;
     int dilate_w = jcp.dilate_w + 1;
     int stride_w = jcp.stride_w;
@@ -138,14 +143,25 @@ void jit_uni_dw_conv_fwd_kernel_f32_t<isa>::apply_filter_unrolled(
     const auto src_layout_nxc = is_src_layout_nxc();
     const auto iw_stride = src_layout_nxc ? jcp.ngroups : ch_blk;
     const auto ih_stride = jcp.iw * iw_stride;
+    const auto id_stride = jcp.ih * ih_stride;
     const auto icb_stride = src_layout_nxc
             ? ch_blk
-            : (jcp.is_fused_conv ? 1 : jcp.ih) * jcp.iw * ch_blk;
+            : (jcp.is_fused_conv ? 1 : jcp.id * jcp.ih) * jcp.iw * ch_blk;
 
     Label iter_exit_label;
 
-    cmp(reg_kh, 0);
+    cmp(reg_kd, 0);
     b(EQ, iter_exit_label);
+
+    // Preserve the first valid depth-plane bases. The inner KH loop advances
+    // aux_reg_input/aux_reg_kernel, so each KD iteration restores from here.
+    mov(aux_reg_input_depth, aux_reg_input);
+    mov(aux_reg_kernel_depth, aux_reg_kernel);
+    mov(iter_kd, reg_kd);
+    Label kd_label;
+    L(kd_label);
+    mov(aux_reg_input, aux_reg_input_depth);
+    mov(aux_reg_kernel, aux_reg_kernel_depth);
 
     mov(iter_kh, reg_kh);
     Label kh_label;
@@ -161,7 +177,8 @@ void jit_uni_dw_conv_fwd_kernel_f32_t<isa>::apply_filter_unrolled(
             add_imm(reg_tmp_addr, aux_reg_input,
                     (ch * icb_stride) * jcp.typesize_in, reg_tmp_imm);
             add_imm(reg_tmp2_addr, aux_reg_kernel,
-                    (ch * jcp.kh * jcp.kw * ch_blk) * jcp.typesize_in,
+                    (ch * jcp.kd * jcp.kh * jcp.kw * ch_blk)
+                            * jcp.typesize_in,
                     reg_tmp_imm);
             for (int kw = 0; kw < jcp.kw; kw++) {
                 int ker_off = kw * ch_blk;
@@ -239,6 +256,17 @@ void jit_uni_dw_conv_fwd_kernel_f32_t<isa>::apply_filter_unrolled(
         b(GT, kh_label);
     }
 
+    // Move to the same valid KH position in the next dilated input depth
+    // plane and the next physical weight depth plane.
+    add_imm(aux_reg_input_depth,
+            aux_reg_input_depth,
+            id_stride * dilate_d * jcp.typesize_in, reg_tmp_imm);
+    add_imm(aux_reg_kernel_depth, aux_reg_kernel_depth,
+            jcp.kh * jcp.kw * ch_blk * jcp.typesize_in, reg_tmp_imm);
+    sub(iter_kd, iter_kd, 1);
+    cmp(iter_kd, 0);
+    b(GT, kd_label);
+
     L(iter_exit_label);
 }
 
@@ -256,7 +284,9 @@ void jit_uni_dw_conv_fwd_kernel_f32_t<isa>::store_dst(
 
     const auto dst_layout_nxc = is_dst_layout_nxc();
     const auto ch_blk = jcp.ch_block;
-    const auto ocb_stride = dst_layout_nxc ? ch_blk : jcp.oh * jcp.ow * ch_blk;
+    const auto ocb_stride = dst_layout_nxc
+            ? ch_blk
+            : jcp.od * jcp.oh * jcp.ow * ch_blk;
     const auto ow_stride = dst_layout_nxc ? jcp.ngroups : ch_blk;
 
     for (int ch = 0; ch < ur_ch_blocks; ch++) {
@@ -289,7 +319,9 @@ void jit_uni_dw_conv_fwd_kernel_f32_t<asimd>::store_dst(
 
     const auto dst_layout_nxc = is_dst_layout_nxc();
     const auto ch_blk = jcp.ch_block;
-    const auto ocb_stride = dst_layout_nxc ? ch_blk : jcp.oh * jcp.ow * ch_blk;
+    const auto ocb_stride = dst_layout_nxc
+            ? ch_blk
+            : jcp.od * jcp.oh * jcp.ow * ch_blk;
     const auto ow_stride = dst_layout_nxc ? jcp.ngroups : ch_blk;
 
     for (int ch = 0; ch < ur_ch_blocks; ch++) {
@@ -313,8 +345,8 @@ void jit_uni_dw_conv_fwd_kernel_f32_t<isa>::compute_loop(
     const bool ch_loop = ur_ch_blocks > jcp.nb_ch_blocking;
     // ch_loop currently happen only when data layout is nxc. The strides are
     // calculated for this layout only.
-    const size_t wei_ch_stride = (size_t)jcp.nb_ch_blocking * jcp.kh * jcp.kw
-            * jcp.ch_block * jcp.typesize_in;
+    const size_t wei_ch_stride = (size_t)jcp.nb_ch_blocking * jcp.kd * jcp.kh
+            * jcp.kw * jcp.ch_block * jcp.typesize_in;
     const size_t inp_ch_stride
             = (size_t)jcp.nb_ch_blocking * jcp.ch_block * jcp.typesize_in;
     const size_t out_ch_stride
@@ -470,6 +502,8 @@ void jit_uni_dw_conv_fwd_kernel_f32_t<isa>::generate() {
     ldr(reg_kernel, ptr(abi_param1, GET_OFF(filt)));
     if (jcp.with_bias) { ldr(reg_bias, ptr(abi_param1, GET_OFF(bias))); }
     ldr(reg_kh, ptr(abi_param1, GET_OFF(kh_padding)));
+    // KD is one for 2D descriptors, so the new loop preserves the old path.
+    ldr(reg_kd, ptr(abi_param1, GET_OFF(kd_padding)));
     ldr(reg_ch_blocks, ptr(abi_param1, GET_OFF(ch_blocks)));
 
     Label ch_blocks_tail_label;

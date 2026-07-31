@@ -80,6 +80,12 @@ private:
     reg64_t reg_bias_stack = x19;
     reg64_t reg_tmp_addr = x20;
     reg64_t reg_tmp2_addr = x21;
+    // 3D depth reduction state. Separate depth bases are required because
+    // the existing KH loop advances its working input and weight pointers.
+    reg64_t reg_kd = x22;
+    reg64_t iter_kd = x23;
+    reg64_t aux_reg_input_depth = x24;
+    reg64_t aux_reg_kernel_depth = x25;
 
     inline void load_src(int ur_ch_blocks, int ur_w);
     inline void compute_loop(int ur_w, int ur_ch_blocks, int pad_l, int pad_r);

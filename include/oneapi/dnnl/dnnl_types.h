@@ -1085,6 +1085,10 @@ typedef enum {
     dnnl_Abc32a,
     dnnl_aBcdef8b,
     dnnl_aBcdef32b,
+    // Six-dimensional grouped depthwise weights with G blocked by the SVE
+    // lane count. These back Goidhw4g and Goidhw8g below.
+    dnnl_Abcdef4a,
+    dnnl_Abcdef8a,
 
     /// Just a sentinel, not real memory format tag. Must be changed after new
     /// format tag is added.
@@ -1694,6 +1698,8 @@ typedef enum {
     dnnl_gOIdhw8o8i = dnnl_aBCdef8b8c,
     dnnl_gOIdhw8o4i = dnnl_aBCdef8b4c,
     dnnl_Goidhw16g = dnnl_Abcdef16a,
+    dnnl_Goidhw4g = dnnl_Abcdef4a,
+    dnnl_Goidhw8g = dnnl_Abcdef8a,
     dnnl_Goidhw32g = dnnl_Abcdef32a,
     dnnl_gOIdhw2i4o2i = dnnl_aBCdef2c4b2c,
     dnnl_gOIdhw4i8o2i = dnnl_aBCdef4c8b2c,
